@@ -1,0 +1,13 @@
+*.glb
+*.gltf
+*.vrm
+*.blend
+*.blend1
+*.ktx2
+*.dump
+*.png
+*.jpg
+*.log
+__pycache__/
+node_modules/
+.DS_Store

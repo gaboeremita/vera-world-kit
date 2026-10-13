@@ -20,6 +20,8 @@ const [input, output] = args.filter((arg, index) => !arg.startsWith('--') && !ar
 const TRIANGLES = option('triangles', 12000);
 const MAX = option('max', 256);
 const ERROR = option('error', 0.005);
+// Meshes this small are left whole: thin garments that lose their shape let the body under them show through.
+const KEEP_TRIANGLES = 600;
 
 const COMPONENT_BYTES = { 5120: 1, 5121: 1, 5122: 2, 5123: 2, 5125: 4, 5126: 4 };
 const COMPONENT_ARRAYS = { 5120: Int8Array, 5121: Uint8Array, 5122: Int16Array, 5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array };
@@ -105,9 +107,17 @@ for (const mesh of json.meshes ?? []) {
 		const vertexCount = positions.length / 3;
 		const simplified = group.map((primitive) => {
 			const indices = primitive.indices !== undefined ? Uint32Array.from(readAccessor(primitive.indices)) : Uint32Array.from({ length: vertexCount }, (_, index) => index);
-			const target = Math.max(3, Math.floor((indices.length * ratio) / 3) * 3);
-			const [result] = MeshoptSimplifier.simplify(indices, positions, 3, target, ERROR, ['LockBorder']);
-			return result;
+			const target = Math.min(indices.length, Math.max(Math.floor((indices.length * ratio) / 3) * 3, KEEP_TRIANGLES * 3));
+			const [locked] = MeshoptSimplifier.simplify(indices, positions, 3, target, ERROR, ['LockBorder']);
+			if (locked.length <= target * 2) return locked;
+			// Hair cards and meshes split along UV seams are almost all open edges, which LockBorder freezes.
+			let best = locked;
+			for (const error of [ERROR, ERROR * 4]) {
+				const [loose] = MeshoptSimplifier.simplify(indices, positions, 3, target, error, ['Permissive', 'Prune']);
+				if (loose.length < best.length) best = loose;
+				if (best.length <= target * 2) break;
+			}
+			return best;
 		});
 
 		const remap = new Int32Array(vertexCount).fill(-1);

@@ -6,8 +6,7 @@
 - Interior chunks: what is inside each enterable building, drawn only up close. Outer walls, roofs,
   ground floors and ceilings stay with the street, so a building never opens a hole when its inside hides.
 - Anything wider than a cell (roads, ground, perimeter, wires) is drawn always.
-Meshes are merged per material inside each group, in name order, so the result doesn't depend on how the
-scene was built or loaded. Works on copies, so the .blend stays untouched.
+Meshes are merged per material inside each group, in name order. Works on copies, so the .blend stays untouched.
 
 run() reads the `region` config module: OUT, TEXTURES, EXPORT_COLLECTIONS, INTERIOR_COLLECTION, BACKDROP_NAMES,
 LANDMARKS, enterable() -> {building: (x0, y0, x1, y1, roof)}, and optionally CELL, STREET_DRAW_DISTANCE,

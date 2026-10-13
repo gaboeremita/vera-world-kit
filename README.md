@@ -1,8 +1,8 @@
 # vera-world-kit
 
-Generic Blender and Node pipeline that builds VERA region GLBs, resident avatars and world data from content kept outside the repo.
+Generic Blender and Node pipeline that builds VERA region GLBs and resident avatars from content kept outside the repo.
 
-This repo holds code only. Every region, character and asset lives in a separate content folder that is not under git.
+Each tool reads its input from a content folder you point it at: a region folder, or an avatar recipe.
 
 ## Requirements
 
@@ -10,8 +10,6 @@ This repo holds code only. Every region, character and asset lives in a separate
 - Node (tested on 26)
 - `basisu` on the PATH, for KTX2 texture compression
 - A checkout of the VERA app with `npm install` done, named by `VERA_APP`: the nav tools run its own collision, navigation and layout code, and the Node tools load `three` and `@pixiv/three-vrm` from its `node_modules`
-
-MakeHuman assets are found through MPFB itself, so bundled data and installed asset packs both work. Nothing needs installing with pip: the Python scripts run inside Blender, which ships `numpy` and `mathutils`.
 
 ## Layout
 

@@ -9,6 +9,11 @@ const { floorBounds } = await import(`${REPO}/resources/js/components/world/worl
 const [glbPath, layoutPath, xs, zs, ys] = process.argv.slice(2);
 const buffer = fs.readFileSync(glbPath); const jl = buffer.readUInt32LE(12);
 const json = JSON.parse(buffer.subarray(20, 20 + jl).toString('utf8')); delete json.images; delete json.textures; delete json.samplers;
+for (const material of json.materials ?? []) {
+	const pbr = material.pbrMetallicRoughness ?? {};
+	delete pbr.baseColorTexture; delete pbr.metallicRoughnessTexture;
+	delete material.normalTexture; delete material.emissiveTexture; delete material.occlusionTexture;
+}
 let text = JSON.stringify(json); while (text.length % 4) text += ' ';
 const jc = Buffer.from(text); const rest = buffer.subarray(20 + jl);
 const header = Buffer.alloc(20); header.writeUInt32LE(0x46546c67, 0); header.writeUInt32LE(2, 4); header.writeUInt32LE(20 + jc.length + rest.length, 8); header.writeUInt32LE(jc.length, 12); header.writeUInt32LE(0x4e4f534a, 16);

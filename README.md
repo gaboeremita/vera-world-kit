@@ -7,7 +7,7 @@ Each tool reads its input from a content folder you point it at: a region folder
 ## Requirements
 
 - Blender 5.2, with the MPFB extension (MakeHuman) and the VRM add-on
-- Node (tested on 26)
+- Node (tested on 26), with `npm install` run in this repo
 - `basisu` on the PATH, for KTX2 texture compression
 - A checkout of the VERA app with `npm install` done, named by `VERA_APP`: the nav tools run its own collision, navigation and layout code, and the Node tools load `three` and `@pixiv/three-vrm` from its `node_modules`
 
@@ -16,7 +16,7 @@ Each tool reads its input from a content folder you point it at: a region folder
 ```
 blender/   region builder: geometry helpers, pixel-font signs, painted lighting, chunked export, pipeline runner
 nav/       layout parse and navigation check on a region GLB, plus debugging probes
-avatars/   MakeHuman build, GLB to VRM conversion, tinting, KTX2 compression, contact sheets, recipe runner
+avatars/   MakeHuman build, GLB to VRM conversion, tinting, KTX2 compression, low-detail bodies, contact sheets, recipe runner
 tools/     GLB fingerprinting for comparing builds
 ```
 
@@ -84,6 +84,15 @@ A recipe JSON lists the bodies to build. Paths are relative to the recipe.
 
 1. MakeHuman bodies: in Blender, run `avatars/mpfb_build.py` with `RECIPE` and `OUT` set, and optionally `ONLY`. It writes `mpfb-<key>.glb`.
 2. All bodies: `node avatars/bodies.mjs <recipe.json> [key ...]` converts or copies each body to `body-<key>.vrm`, tints it, and writes a KTX2-compressed copy to the `ktx` folder. Bodies marked `"unused"` are skipped unless named. Set `BLENDER` when Blender isn't at the macOS default path.
+
+### Low-detail bodies
+
+```bash
+npm install
+node avatars/lod.mjs in.vrm out.vrm [--triangles 12000] [--error 0.005] [--max 256]
+```
+
+Makes the body the app shows beyond 18 m. Each mesh is simplified toward the triangle budget until it would drift more than `--error` (a fraction of the mesh's size) from its shape. Morph targets and the expression binds that use them are removed, and textures are shrunk to `--max` px as KTX2. The skeleton, skinning, humanoid mapping, materials and metadata are kept, so the same poses and animations play on it. Input textures may be PNG, JPEG or KTX2.
 
 `tint.mjs` also works on its own: `node avatars/tint.mjs list a.vrm` lists material names, and `node avatars/tint.mjs in.vrm out.vrm '<json>'` applies `name`, `tints` and `alpha` rules.
 

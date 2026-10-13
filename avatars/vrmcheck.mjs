@@ -13,6 +13,16 @@ function stripTextures(buffer) {
 	const rest = buffer.subarray(20 + length);
 	const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
 	json.images = (json.images ?? []).map(() => ({ uri: pixel, mimeType: 'image/png' }));
+	for (const texture of json.textures ?? []) {
+		const basisu = texture.extensions?.KHR_texture_basisu;
+		if (basisu) {
+			texture.source = basisu.source;
+			delete texture.extensions.KHR_texture_basisu;
+		}
+	}
+	for (const list of ['extensionsUsed', 'extensionsRequired']) {
+		if (json[list]) json[list] = json[list].filter((name) => name !== 'KHR_texture_basisu');
+	}
 	let text = JSON.stringify(json); while (text.length % 4) text += ' ';
 	const chunk = Buffer.from(text);
 	const header = Buffer.alloc(20);

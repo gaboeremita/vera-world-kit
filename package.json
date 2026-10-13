@@ -1,0 +1,7 @@
+{
+  "name": "vera-world-kit",
+  "private": true,
+  "dependencies": {
+    "meshoptimizer": "1.2.0"
+  }
+}

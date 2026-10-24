@@ -1,4 +1,4 @@
-// Loads VRM files with the app's three-vrm and reports meta, humanoid and size. usage: node vrmcheck.mjs a.vrm ...
+// Loads VRM files with the app's three-vrm and reports meta, humanoid, size and spring bones. usage: node vrmcheck.mjs a.vrm ...
 import fs from 'node:fs';
 const REPO = process.env.VERA_APP;
 if (!REPO) throw new Error('Set VERA_APP to the app checkout.');
@@ -40,7 +40,7 @@ for (const file of process.argv.slice(2)) {
 		const box = new THREE.Box3().setFromObject(vrm.scene);
 		const head = vrm.humanoid.getNormalizedBoneNode('head').getWorldPosition(new THREE.Vector3());
 		const leftHand = vrm.humanoid.getNormalizedBoneNode('leftHand')?.getWorldPosition(new THREE.Vector3());
-		console.log(file.split('/').pop(), JSON.stringify({ meta: vrm.meta?.metaVersion, name: vrm.meta?.name, bones: Object.keys(vrm.humanoid.humanBones).length, height: +(box.max.y - box.min.y).toFixed(2), headY: +head.y.toFixed(2), leftHandX: leftHand && +leftHand.x.toFixed(2), expressions: vrm.expressionManager?.expressions.length ?? 0 }));
+		console.log(file.split('/').pop(), JSON.stringify({ meta: vrm.meta?.metaVersion, name: vrm.meta?.name, bones: Object.keys(vrm.humanoid.humanBones).length, height: +(box.max.y - box.min.y).toFixed(2), headY: +head.y.toFixed(2), leftHandX: leftHand && +leftHand.x.toFixed(2), expressions: vrm.expressionManager?.expressions.length ?? 0, springJoints: vrm.springBoneManager?.joints.size ?? 0, springColliders: vrm.springBoneManager?.colliders.size ?? vrm.springBoneManager?.colliders.length ?? 0 }));
 	} catch (error) {
 		console.log(file.split('/').pop(), 'FAILED', error.message);
 	}

@@ -16,8 +16,8 @@ Each tool reads its input from a content folder you point it at: a region folder
 ```
 blender/   region builder: geometry helpers, pixel-font signs, painted lighting, chunked export, pipeline runner
 nav/       layout parse and navigation check on a region GLB, plus debugging probes
-avatars/   MakeHuman build, GLB to VRM conversion, tinting, KTX2 compression, low-detail bodies, contact sheets, recipe runner
-tools/     GLB fingerprinting for comparing builds
+avatars/   MakeHuman build, fused-mesh rigging with spring bones, GLB to VRM conversion, scaling, tinting, KTX2 compression, low-detail bodies, contact sheets, recipe runner
+tools/     GLB fingerprinting for comparing builds, swapping a rebuilt GLB into an app region
 ```
 
 ## Regions
@@ -43,10 +43,12 @@ A region is a folder in the content folder with a `region.py` config module and 
 | `BACKDROP_CARDS` | Name prefixes of flat cards that neither subdivide nor cast shadows |
 | `BACKDROP_NAMES` | Name prefixes exported as the always-drawn backdrop |
 | `LANDMARKS` | Name prefixes kept with the street even inside a building |
-| `inside_rects()` | `(x0, y0, x1, y1, top)` boxes lit as indoors |
+| `inside_rects()` | `(x0, y0, x1, y1, top)` boxes lit as indoors, the first match winning; an optional sixth item sets that room's light colour |
 | `enterable()` | `{building: (x0, y0, x1, y1, roof)}` for interior chunks |
 
 Optional: `SUN`, `SUN_COLOR`, `SKY_COLOR`, `INSIDE_COLOR`, `SKY_BANDS`, `CELL`, `STREET_DRAW_DISTANCE`, `INTERIOR_DRAW_DISTANCE`, `LOW_DETAIL_MIN_SIZE`.
+
+Printed artwork (logos, menus, screens, posters, patterns) is painted on a `signs.Canvas` in texels and shown with `signs.printed_material` on a `lib.picture`, which can face any way and be round. The look keeps a printed image's UVs and colours, and the export packs it into the sign atlas. The pixel font prints capitals unless `keep_case=True` is passed, which keeps lowercase and accented letters. A material made with `alpha` below 1 exports as unlit and alpha-blended, for glass. `lib.octahedron` makes hanging decor (lanterns, lamps) whose faces are too steep for the navigation grid to stand on.
 
 Build, light and export in the open Blender file:
 
@@ -66,6 +68,14 @@ VERA_APP=/path/to/app nav/region-check.sh /path/to/region.glb
 
 It writes `layout.json` and floor maps next to the GLB, and reports zones, spots, long routes and blockers.
 
+Put a rebuilt GLB into a region that already exists in the app:
+
+```bash
+VERA_APP=/path/to/app tools/region-swap.sh <region id> /path/to/region.glb [backup folder]
+```
+
+It does what the app's region update does (parse the layout, store the file beside the region's current GLB, update the region, drop passage links whose passage is gone), refuses when the layout parser warns, and copies the previous GLB into the backup folder (default: the GLB's folder) before deleting it.
+
 ## Avatars
 
 A recipe JSON lists the bodies to build. Paths are relative to the recipe.
@@ -83,7 +93,21 @@ A recipe JSON lists the bodies to build. Paths are relative to the recipe.
 ```
 
 1. MakeHuman bodies: in Blender, run `avatars/mpfb_build.py` with `RECIPE` and `OUT` set, and optionally `ONLY`. It writes `mpfb-<key>.glb`.
-2. All bodies: `node avatars/bodies.mjs <recipe.json> [key ...]` converts or copies each body to `body-<key>.vrm`, tints it, and writes a KTX2-compressed copy to the `ktx` folder. Bodies marked `"unused"` are skipped unless named. Set `BLENDER` when Blender isn't at the macOS default path.
+2. All bodies: `node avatars/bodies.mjs <recipe.json> [key ...]` converts or copies each body to `body-<key>.vrm` (a source body with `"height"` is scaled to that height, measured over the whole mesh including hair), tints it, and writes a KTX2-compressed copy to the `ktx` folder. Bodies marked `"unused"` are skipped unless named. Set `BLENDER` when Blender isn't at the macOS default path.
+
+### Fused meshes
+
+A body generated as one textured shell with no skeleton (image-to-3D output) is rigged by `avatars/rig.py` from a `"rig"` entry:
+
+```json
+{"key": "c", "name": "C", "height": 1.65,
+ "rig": {"source": "sources/c.glb", "triangles": 60000, "joints": {}, "chains": [
+   {"name": "hair_l", "parent": "head", "bones": 5, "falloff": 0.03, "colour": [[0.15, 0.28, 0.42], 0.2], "region": {"box": [[0.0, -0.05, 0.84], [0.3, 0.35, 1.47]]}},
+   {"name": "strap", "parent": "pelvis", "falloff": 0.015, "region": {"box": [[-0.13, -0.26, 0.72], [-0.05, -0.18, 0.95]]}, "points": [[-0.09, -0.19, 0.95], [-0.08, -0.23, 0.72]]}]},
+ "springs": {"hair": {"chains": ["hair_l"], "stiffness": 0.9, "gravity": 0.3, "drag": 0.4, "radius": 0.03, "colliders": ["head", "spine_03", "upperarm_l"]}}}
+```
+
+The source must stand in a T- or A-pose facing -Y. `rig.py` scales it to `height`, reduces it toward `triangles` while keeping edges short enough to bend, places the joints from the mesh (`joints` overrides any of them, in metres) and weights the body. Each chain adds bones through `points`, or along its region when `points` is left out, and takes over the region's vertices: `region` is a box, sphere or capsule softened over `falloff` metres, and `colour` keeps vertices whose texture colour is within the given distance, which separates hair from the clothes it is fused to. `bodies.mjs` writes `rigged-<key>.glb`, then `convert.py` adds one VRM spring per chain and a capsule collider on each bone in a spring group's `colliders`. `node avatars/vrmcheck.mjs` reports the spring joints and colliders the app loads.
 
 ### Low-detail bodies
 

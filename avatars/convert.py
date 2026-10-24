@@ -1,6 +1,9 @@
 """Turns a rigged GLB character into a VRM 1.0 avatar: cleans the import, sizes it, maps the humanoid bones and exports.
 
-Pass the job as JSON after "--": {"source", "target", "name", "author", "height", "tint": {material substring: [r, g, b]}, "bones"}.
+Pass the job as JSON after "--": {"source", "target", "name", "author", "height", "tint": {material substring: [r, g, b]}, "bones",
+"springs"}. "springs" maps a spring group name to {"chains", "stiffness", "gravity", "drag", "radius", "colliders"}: every bone named
+<chain>_NN for each listed chain becomes a joint of one spring per chain, and each bone in "colliders" gets a capsule along it,
+sized from the mesh it moves.
 """
 import bpy
 from mathutils import Vector
@@ -126,11 +129,71 @@ with override():
             getattr(human_bones, vrm_bone).node.bone_name = bone_name
     bpy.ops.vrm.make_estimated_humanoid_t_pose(armature_object_name=armature.name)
     bpy.ops.vrm.assign_vrm1_expressions_automatically(armature_object_name=armature.name)
+
+
+def collider_radius(bone_name):
+    """Median distance from the bone to the vertices it moves most, pulled in so hair rests on the surface."""
+    bone = armature.data.bones[bone_name]
+    a, b = Vector(bone.head_local), Vector(bone.tail_local)
+    distances = []
+    for obj in meshes:
+        group = obj.vertex_groups.get(bone_name)
+        if group is None:
+            continue
+        for vertex in obj.data.vertices:
+            strongest = max(vertex.groups, key=lambda g: g.weight, default=None)
+            if strongest is not None and strongest.group == group.index:
+                point = vertex.co
+                t = max(0.0, min(1.0, (point - a).dot(b - a) / max((b - a).length_squared, 1e-9)))
+                distances.append((point - (a + (b - a) * t)).length)
+    distances.sort()
+    return max(0.02, min(0.2, 0.85 * distances[len(distances) // 2])) if distances else 0.05
+
+
+spring_report = []
+springs = job.get("springs") or {}
+if springs:
+    spring_bone = armature.data.vrm_addon_extension.spring_bone1
+    colliders = {}
+    for name in sorted({bone for group in springs.values() for bone in group.get("colliders", [])}):
+        bone = armature.data.bones[name]
+        collider = spring_bone.add_collider(bpy.context, armature)
+        collider.node.bone_name = name
+        collider.shape_type = "Capsule"
+        collider.shape.capsule.offset = (0.0, 0.0, 0.0)
+        collider.shape.capsule.tail = (0.0, bone.length, 0.0)
+        collider.shape.capsule.radius = collider_radius(name)
+        # Adding to a collection invalidates Python handles to its earlier items, so keep the uuid.
+        colliders[name] = collider.uuid
+    for group_name, settings in springs.items():
+        group_uuid = None
+        if settings.get("colliders"):
+            collider_group = spring_bone.add_collider_group()
+            collider_group.vrm_name = group_name
+            group_uuid = collider_group.uuid
+            for name in settings["colliders"]:
+                collider_group.add_collider().collider_uuid = colliders[name]
+        for chain in settings["chains"]:
+            bones = sorted(b.name for b in armature.data.bones if re.fullmatch(re.escape(chain) + r"_\d+", b.name))
+            spring = spring_bone.add_spring()
+            spring.vrm_name = chain
+            for name in bones:
+                joint = spring.add_joint()
+                joint.node.bone_name = name
+                joint.stiffness = settings.get("stiffness", 1.0)
+                joint.gravity_power = settings.get("gravity", 0.0)
+                joint.gravity_dir = (0.0, 0.0, -1.0)
+                joint.drag_force = settings.get("drag", 0.5)
+                joint.hit_radius = settings.get("radius", 0.02)
+            if group_uuid is not None:
+                spring.add_collider_group().collider_group_uuid = group_uuid
+            spring_report.append({"spring": chain, "joints": len(bones)})
+
 human = armature.data.vrm_addon_extension.vrm1.humanoid.human_bones
-required = ["hips", "spine", "head", "left_upper_arm", "right_upper_arm", "left_upper_leg", "right_upper_leg", "left_lower_leg", "right_lower_leg", "left_foot", "right_foot"]
+required =["hips", "spine", "head", "left_upper_arm", "right_upper_arm", "left_upper_leg", "right_upper_leg", "left_lower_leg", "right_lower_leg", "left_foot", "right_foot"]
 missing = [b for b in required if not getattr(human, b).node.bone_name]
 result = {"assigned": sum(1 for name in dir(human) if hasattr(getattr(human, name), "node") and getattr(human, name).node.bone_name), "height": round(high.z - low.z, 3), "scale": round(scale, 4), "missing": missing, "meshes": len(meshes),
-          "tris": sum(len(o.data.polygons) for o in meshes)}
+          "tris": sum(len(o.data.polygons) for o in meshes), "springs": spring_report}
 if not missing:
     with override():
         bpy.ops.export_scene.vrm(filepath=job["target"], armature_object_name=armature.name, ignore_warning=True)

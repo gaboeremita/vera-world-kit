@@ -61,6 +61,28 @@ def material(name, color, roughness=0.5, metallic=0.0, alpha=1.0, emission=None,
     return mat
 
 
+def unlit_output(mat, colour, alpha=1.0):
+    """Sends a colour socket straight to the material output, which the glTF exporter writes as unlit;
+    below alpha 1 it mixes in transparency the way the exporter reads as an unlit, alpha-blended material."""
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    out = next((n for n in nodes if n.type == "OUTPUT_MATERIAL"), None) or nodes.new("ShaderNodeOutputMaterial")
+    if alpha >= 1.0:
+        links.new(colour, out.inputs["Surface"])
+        return
+    emission = nodes.new("ShaderNodeEmission")
+    links.new(colour, emission.inputs["Color"])
+    camera = nodes.new("ShaderNodeMixShader")
+    links.new(nodes.new("ShaderNodeLightPath").outputs["Is Camera Ray"], camera.inputs["Fac"])
+    links.new(nodes.new("ShaderNodeBsdfTransparent").outputs[0], camera.inputs[1])
+    links.new(emission.outputs[0], camera.inputs[2])
+    blend = nodes.new("ShaderNodeMixShader")
+    blend.inputs["Fac"].default_value = alpha
+    links.new(nodes.new("ShaderNodeBsdfTransparent").outputs[0], blend.inputs[1])
+    links.new(camera.outputs[0], blend.inputs[2])
+    links.new(blend.outputs[0], out.inputs["Surface"])
+    mat.surface_render_method = "BLENDED"
+
+
 def default_collection():
     """The collection geometry goes into when none is named: the region config's DEFAULT_COLLECTION, else "World"."""
     return getattr(sys.modules.get("region"), "DEFAULT_COLLECTION", "World")
@@ -142,6 +164,26 @@ def sphere(name, x, y, z, radius, mat, coll=None, scale=(1, 1, 1), segments=16):
     obj = bpy.data.objects.new(name, mesh)
     obj.location = (x, y, z)
     obj.scale = scale
+    mesh.materials.append(mat)
+    return _link(obj, coll)
+
+
+def octahedron(name, x, y, z, radius, mat, coll=None, height=None):
+    """Round-ish hanging shape whose faces are all steeper than 45 degrees while height > 0.71 * radius,
+    so the navigation grid finds nothing to stand on (lanterns, lamps, floating decor)."""
+    h = radius if height is None else height
+    mesh = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    ring = [bm.verts.new((radius * math.cos(a), radius * math.sin(a), 0.0)) for a in (0, math.pi / 2, math.pi, 3 * math.pi / 2)]
+    top, bottom = bm.verts.new((0, 0, h)), bm.verts.new((0, 0, -h))
+    for k in range(4):
+        a, b = ring[k], ring[(k + 1) % 4]
+        bm.faces.new((a, b, top))
+        bm.faces.new((b, a, bottom))
+    bm.to_mesh(mesh)
+    bm.free()
+    obj = bpy.data.objects.new(name, mesh)
+    obj.location = (x, y, z)
     mesh.materials.append(mat)
     return _link(obj, coll)
 
@@ -263,16 +305,21 @@ def image_material(name, path, roughness=0.6, emission_strength=0.0):
     return mat
 
 
-def picture(name, bottom_left, right, width, height, mat, coll=None):
-    """Flat quad with 0-1 UVs; it faces the viewer for whom `right` points to the right."""
-    origin, rvec, up = Vector(bottom_left), Vector(right).normalized(), Vector((0, 0, 1))
-    corners = [origin, origin + rvec * width, origin + rvec * width + up * height, origin + up * height]
+def picture(name, bottom_left, right, width, height, mat, coll=None, up=(0, 0, 1), round_segments=0):
+    """Flat quad with 0-1 UVs; it faces the viewer for whom `right` points to the right and `up` points up.
+    With round_segments, the face is the ellipse inscribed in that rectangle, cut from the same image."""
+    origin, rvec, uvec = Vector(bottom_left), Vector(right).normalized(), Vector(up).normalized()
+    if round_segments:
+        coords = [(0.5 + 0.5 * math.cos(2 * math.pi * k / round_segments), 0.5 + 0.5 * math.sin(2 * math.pi * k / round_segments))
+                  for k in range(round_segments)]
+    else:
+        coords = [(0, 0), (1, 0), (1, 1), (0, 1)]
     mesh = bpy.data.meshes.new(name)
     bm = bmesh.new()
-    verts = [bm.verts.new(c) for c in corners]
+    verts = [bm.verts.new(origin + rvec * (u * width) + uvec * (v * height)) for u, v in coords]
     face = bm.faces.new(verts)
     uv = bm.loops.layers.uv.new("UVMap")
-    for loop, coord in zip(face.loops, ((0, 0), (1, 0), (1, 1), (0, 1))):
+    for loop, coord in zip(face.loops, coords):
         loop[uv].uv = coord
     bm.to_mesh(mesh)
     bm.free()

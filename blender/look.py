@@ -2,7 +2,8 @@
 real shadows, quantized into visible bands, and every material unlit so the painting is what the app shows.
 
 run() reads the `region` config module: TEXTURES, LIT_COLLECTIONS, TEXTURE_RULES, EMISSIVE, BRICK_COLOURS,
-STOREY, SKY_BOX, BACKDROP_CARDS (name prefixes of flat cards that neither subdivide nor cast shadows), inside_rects(), and optionally SUN, SUN_COLOR, SKY_COLOR, INSIDE_COLOR, SKY_BANDS."""
+STOREY, SKY_BOX, BACKDROP_CARDS (name prefixes of flat cards that neither subdivide nor cast shadows), inside_rects() ((x0, y0, x1, y1, top) rooms, the first match winning, each with an optional
+sixth item: its light colour), and optionally SUN, SUN_COLOR, SKY_COLOR, INSIDE_COLOR, SKY_BANDS."""
 import importlib
 import math
 import os
@@ -197,6 +198,8 @@ def save_texture(kind):
 
 
 def texture_kind(mat):
+    if mat.get("printed"):
+        return None
     n = mat.name.lower()
     color = tuple(mat.diffuse_color[:3])
     brickish = any(abs(color[0] - c[0]) < 0.02 and abs(color[1] - c[1]) < 0.02 for c in region.BRICK_COLOURS)
@@ -250,7 +253,7 @@ def make_unlit(mat, image, use_vc=True):
             mat.node_tree.links.new(color, mix.inputs["A"])
             mat.node_tree.links.new(attr.outputs["Color"], mix.inputs["B"])
             color = mix.outputs["Result"]
-    if not mat.name.startswith("Sign text"):
+    if not mat.get("printed"):
         tinted = nodes.new("ShaderNodeMix")
         tinted.data_type = "RGBA"
         tinted.blend_type = "MULTIPLY"
@@ -261,7 +264,8 @@ def make_unlit(mat, image, use_vc=True):
         else:
             mat.node_tree.links.new(color, tinted.inputs["A"])
         color = tinted.outputs["Result"]
-    mat.node_tree.links.new(color, out.inputs["Surface"])
+    nodes.remove(out)
+    lib.unlit_output(mat, color, mat.diffuse_color[3])
     mat.use_backface_culling = False
 
 
@@ -282,9 +286,13 @@ def refine(obj, limit=GRID):
     bm.free()
 
 
+def is_printed(obj):
+    return any(slot.material is not None and slot.material.get("printed") for slot in obj.material_slots)
+
+
 def box_uvs(obj, scale=0.5):
     mesh = obj.data
-    if mesh.uv_layers.get("UVMap") and obj.name.endswith("sign text"):
+    if mesh.uv_layers.get("UVMap") and is_printed(obj):
         return
     uv = mesh.uv_layers.get("UVMap") or mesh.uv_layers.new(name="UVMap")
     world = obj.matrix_world
@@ -333,10 +341,10 @@ def light_object(obj, bvh, rects, interior):
                 values[li, :3] = cache[key]
                 continue
             co = world @ mesh.vertices[vi].co
-            is_inside = interior and any(r[0] < co.x < r[2] and r[1] < co.y < r[3] and co.z < r[4] - 0.05 for r in rects)
-            if is_inside:
+            room = next((r for r in rects if r[0] < co.x < r[2] and r[1] < co.y < r[3] and co.z < r[4] - 0.05), None) if interior else None
+            if room is not None:
                 lift = min(1.0, max(0.0, (co.z % region.STOREY) / 3.0))
-                rgb = INSIDE_COLOR * (0.82 + 0.18 * lift)
+                rgb = (np.array(room[5]) if len(room) > 5 else INSIDE_COLOR) * (0.82 + 0.18 * lift)
             else:
                 sun = 0.0
                 if facing > 0.0:
@@ -391,7 +399,7 @@ def run(config):
     images = {kind: save_texture(kind) for kind in MAKERS}
     objects = [o for name in region.LIT_COLLECTIONS for o in bpy.data.collections[name].all_objects if o.type == "MESH"]
     for obj in objects:
-        if not obj.name.endswith("sign text") and not obj.name.startswith(region.BACKDROP_CARDS):
+        if not is_printed(obj) and not obj.name.startswith(region.BACKDROP_CARDS):
             refine(obj)
         box_uvs(obj)
     bvh = build_bvh([o for o in objects if not o.name.startswith(region.BACKDROP_CARDS)])

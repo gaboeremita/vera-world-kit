@@ -21,6 +21,7 @@ import numpy as np
 from mathutils import Vector
 
 import kit
+import lib
 
 EXPORT = "Export"
 CELL = 32.0
@@ -177,7 +178,7 @@ def low_detail_mesh(name, objects, material):
     return obj
 
 
-# ---------- shared surfaces: tints baked into the vertex light, signs packed into one atlas ----------
+# ---------- shared surfaces: tints baked into the vertex light, signs and printed images packed into one atlas ----------
 
 SIGN_ATLAS_WIDTH = 512
 SIGN_PADDING = 1
@@ -199,8 +200,8 @@ def uses_light(mat):
     return any(n.type == "VERTEX_COLOR" for n in mat.node_tree.nodes)
 
 
-def surface_material(name, image):
-    """Texture x vertex light, straight into the output, which the glTF exporter writes as unlit."""
+def surface_material(name, image, alpha=1.0):
+    """Texture x vertex light, straight into the output, which the glTF exporter writes as unlit (alpha-blended below alpha 1)."""
     mat = bpy.data.materials.get(name) or bpy.data.materials.new(name)
     mat.use_nodes = True
     nodes = mat.node_tree.nodes
@@ -220,7 +221,7 @@ def surface_material(name, image):
         mat.node_tree.links.new(tex.outputs["Color"], mix.inputs["A"])
         mat.node_tree.links.new(colour, mix.inputs["B"])
         colour = mix.outputs["Result"]
-    mat.node_tree.links.new(colour, out.inputs["Surface"])
+    lib.unlit_output(mat, colour, alpha)
     mat.use_backface_culling = False
     return mat
 
@@ -261,13 +262,17 @@ def sign_atlas(images):
 def shared_surfaces(objects):
     """For each source material: the shared material its copies use, and how to rewrite a copy for it."""
     materials = sorted({obj.material_slots[0].material for obj in objects}, key=lambda m: m.name)
-    signs = [m for m in materials if (material_image(m) is not None and material_image(m).name.startswith("sign"))]
+    signs = [m for m in materials if material_image(m) is not None and m.get("printed")]
     atlas, placed, atlas_size = sign_atlas({material_image(m) for m in signs}) if signs else (None, {}, None)
     surfaces = {}
     for mat in materials:
         image = material_image(mat)
         is_sign = mat in signs
-        target = surface_material(f"Surface · {'signs' if is_sign else (image.name if image else 'colour')}", atlas if is_sign else image)
+        alpha = round(mat.diffuse_color[3], 2)
+        label = 'signs' if is_sign else (image.name if image else 'colour')
+        if alpha < 1.0:
+            label = f"{label} · alpha {alpha:g}"
+        target = surface_material(f"Surface · {label}", atlas if is_sign else image, alpha)
         surfaces[mat.name] = {
             "material": target,
             "tint": material_tint(mat),

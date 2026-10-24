@@ -48,7 +48,7 @@ A region is a folder in the content folder with a `region.py` config module and 
 
 Optional: `SUN`, `SUN_COLOR`, `SKY_COLOR`, `INSIDE_COLOR`, `SKY_BANDS`, `CELL`, `STREET_DRAW_DISTANCE`, `INTERIOR_DRAW_DISTANCE`, `LOW_DETAIL_MIN_SIZE`.
 
-Printed artwork (logos, menus, screens, posters, patterns) is painted on a `signs.Canvas` in texels and shown with `signs.printed_material` on a `lib.picture`, which can face any way and be round. The look keeps a printed image's UVs and colours, and the export packs it into the sign atlas. The pixel font prints capitals unless `keep_case=True` is passed, which keeps lowercase and accented letters. A material made with `alpha` below 1 exports as unlit and alpha-blended, for glass. `lib.octahedron` makes hanging decor (lanterns, lamps) whose faces are too steep for the navigation grid to stand on.
+Printed artwork (logos, menus, screens, posters, patterns) is painted on a `signs.Canvas` in texels and shown with `signs.printed_material` on a `lib.picture`, which can face any way and be round. The look keeps a printed image's UVs and colours, and the export packs it into the sign atlas. The pixel font has lowercase and accented letters: `Canvas.text` keeps the case it is given, while sign text is printed in capitals unless `keep_case=True` is passed. A material made with `alpha` below 1 exports as unlit and alpha-blended, for glass. `lib.octahedron` makes hanging decor (lanterns, lamps) whose faces are too steep for the navigation grid to stand on.
 
 Build, light and export in the open Blender file:
 
